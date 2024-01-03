@@ -1,0 +1,8 @@
+[package]
+name = "image_builder"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mbrman = "0.5.2"
+llvm-tools = "0.1.1"
