@@ -10,10 +10,10 @@ mod screen;
 
 use core::{arch::global_asm, panic::PanicInfo};
 
+use disk::get_partition_table_ptr;
+
 use crate::{
-    disk::{
-        check_lba_extension_support, get_partition_table, DiskAddressPacket, PartitionTableEntry,
-    },
+    disk::{check_lba_extension_support, DiskAddressPacket, PartitionTable},
     error::err_fatal,
     screen::print,
 };
@@ -30,11 +30,12 @@ fn get_second_stage_ptr() -> *const u8 {
 // get_second_stage returns a function pointer to the second stage bootloader.
 // This is done by casting the address of the _second_stage_start symbol, which
 // is defined in the linker script, to a function pointer.
-fn jmp_to_second_stage() {
+fn jmp_to_second_stage(drive_number: u16) {
     unsafe {
         let second_stage_ptr = get_second_stage_ptr();
-        let second_stage: fn() = core::mem::transmute(second_stage_ptr);
-        second_stage()
+        let second_stage: fn(dist_number: u16, partition_table: *const u8) =
+            core::mem::transmute(second_stage_ptr);
+        second_stage(drive_number, get_partition_table_ptr());
     }
 }
 
@@ -50,8 +51,8 @@ pub extern "C" fn first_stage(drive_number: u16) {
     }
 
     // Partitions are 1-indexed.
-    let partition_table = get_partition_table();
-    let second_stage_partition = PartitionTableEntry::from_raw(partition_table, 1);
+    let mut partition_table = PartitionTable::from_ptr(get_partition_table_ptr());
+    let second_stage_partition = partition_table.load_entry(1);
 
     let mut sectors_left = second_stage_partition.sector_count;
     let mut current_lba = second_stage_partition.lba_start as u64;
@@ -76,7 +77,7 @@ pub extern "C" fn first_stage(drive_number: u16) {
         memory_addr += sectors_to_read * 512;
     }
 
-    jmp_to_second_stage();
+    jmp_to_second_stage(drive_number);
 }
 
 #[panic_handler]

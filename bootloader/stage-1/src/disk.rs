@@ -3,16 +3,11 @@
 
 use core::arch::asm;
 
-pub fn get_partition_table() -> &'static [u8] {
+pub fn get_partition_table_ptr() -> *const u8 {
     extern "C" {
         static _partition_table: u8;
     }
-
-    unsafe {
-        let partition_table_ptr = &_partition_table as *const u8;
-        let partition_table = core::slice::from_raw_parts(partition_table_ptr, 16 * 4);
-        partition_table
-    }
+    unsafe { &_partition_table as *const u8 }
 }
 
 // check_lba_extension_support checks if the BIOS supports LBA extensions.
@@ -41,6 +36,25 @@ pub fn check_lba_extension_support() -> bool {
     supported == 0 // Carry flag is NOT set if LBA extensions are supported.
 }
 
+pub struct PartitionTable {
+    ptr: *const u8,
+    raw: &'static [u8],
+}
+
+impl PartitionTable {
+    pub fn from_ptr(ptr: *const u8) -> Self {
+        let raw = unsafe { core::slice::from_raw_parts(ptr, 16 * 4) };
+        Self { ptr, raw }
+    }
+
+    // load_entry loads a partition table entry from the partition table.
+    // @param index: The index of the partition table entry to load. Entries are 1-indexed.
+    pub fn load_entry(&self, index: usize) -> PartitionTableEntry {
+        PartitionTableEntry::from_raw(self.raw, index)
+    }
+}
+
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct PartitionTableEntry {
     // If true, partition is bootable.
@@ -56,6 +70,7 @@ impl PartitionTableEntry {
     // @param partition_table_raw: The raw partition table bytes.
     // Reference: https://en.wikipedia.org/wiki/Master_boot_record#PTE.
     pub fn from_raw(partition_table_raw: &[u8], index: usize) -> Self {
+        debug_assert!(index > 0 && index <= 4);
         let index = index - 1; // Partitions are 1-indexed.
         let start_index = index * 16;
         let end_index = index * 16 + 16;
