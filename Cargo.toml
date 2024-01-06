@@ -1,2 +1,2 @@
 [workspace]
-members = ["bootloader/*", "image_builder", "kernel"]
+members = ["bootloader/*", "image", "kernel"]

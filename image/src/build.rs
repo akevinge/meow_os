@@ -9,9 +9,10 @@ use std::{
 
 use mbrman::{MBRPartitionEntry, BOOT_ACTIVE, CHS, MBR};
 
+// run builds the bootloader, kernel, and image.
+// @param out_dir: The output directory.
+// @param image_path: The path to the disk image.
 pub fn run(out_dir: &str, image_path: &str) {
-    // Get the output directory from OUT_DIR, default to 'bin'.
-
     let stage_1_path = build(&out_dir, "bootloader/stage-1", "stage-1");
     let stage_2_path = build(&out_dir, "bootloader/stage-2", "stage-2");
     let kernel_path = build(&out_dir, "kernel/", "kernel");
