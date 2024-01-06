@@ -7,7 +7,7 @@ use std::{
     process::Command,
 };
 
-use mbrman::{MBRPartitionEntry, BOOT_ACTIVE, CHS, MBR};
+use mbrman::{MBRPartitionEntry, BOOT_ACTIVE, BOOT_INACTIVE, CHS, MBR};
 
 fn main() {
     // Get the output directory from OUT_DIR, default to 'bin'.
@@ -15,11 +15,13 @@ fn main() {
 
     let stage_1_path = build(&out_dir, "bootloader/stage-1", "stage-1");
     let stage_2_path = build(&out_dir, "bootloader/stage-2", "stage-2");
+    let kernel_path = build(&out_dir, "kernel/", "kernel");
 
     build_image(
         &out_dir,
         &stage_1_path.to_str().unwrap(),
         &stage_2_path.to_str().unwrap(),
+        &kernel_path.to_str().unwrap(),
     )
     .expect("Failed to build disk image");
 }
@@ -98,13 +100,15 @@ fn build_image(
     out_dir: &str,
     stage_1_path: &str,
     second_stage_path: &str,
+    kernel_path: &str,
 ) -> Result<(), Box<dyn Error>> {
     let mut stage_1 = File::open(stage_1_path)?;
+    let mut second_stage = File::open(second_stage_path)?;
+    let mut kernel = File::open(kernel_path)?;
+
     let mut mbr = MBR::read_from(&mut stage_1, 512)?;
 
-    let mut second_stage = File::open(second_stage_path)?;
-
-    // Add stages to the partition table.
+    // Add stages and kernel to the partition table.
     // Partitions are 1-indexed.
     mbr[1] = MBRPartitionEntry {
         boot: BOOT_ACTIVE,
@@ -115,17 +119,30 @@ fn build_image(
         last_chs: CHS::empty(),
     };
 
+    mbr[2] = MBRPartitionEntry {
+        boot: BOOT_ACTIVE,
+        starting_lba: 1 + mbr[1].sectors,
+        sectors: (kernel.metadata()?.len() - 1) as u32 / 512 + 1,
+        sys: 0x83,
+        first_chs: CHS::empty(),
+        last_chs: CHS::empty(),
+    };
+
     let mut disk_image = File::create(out_dir.to_owned() + "/disk_image.bin")?;
 
     mbr.write_into(&mut disk_image)?;
-
     assert_eq!(disk_image.stream_position()?, 512);
 
     io::copy(&mut second_stage, &mut disk_image)?;
-
     assert_eq!(
         disk_image.stream_position()?,
         512 + second_stage.metadata()?.len()
+    );
+
+    io::copy(&mut kernel, &mut disk_image)?;
+    assert_eq!(
+        disk_image.stream_position()?,
+        512 + second_stage.metadata()?.len() + kernel.metadata()?.len()
     );
 
     Ok(())
