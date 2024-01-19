@@ -3,10 +3,9 @@ mod image;
 
 use std::{path::Path, process::Command};
 
+use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
 use tempfile::NamedTempFile;
-
-type DynErr = Box<dyn std::error::Error>;
 
 #[derive(Args)]
 struct BuildOptions {
@@ -36,12 +35,12 @@ struct CLI {
 
 fn main() {
     if let Err(err) = try_main() {
-        eprintln!("{}", err);
+        eprintln!("XTask Error: {:#}", err);
         std::process::exit(1);
     }
 }
 
-fn try_main() -> Result<(), DynErr> {
+fn try_main() -> anyhow::Result<()> {
     let cli = CLI::parse();
 
     match &cli.command {
@@ -52,20 +51,20 @@ fn try_main() -> Result<(), DynErr> {
     Ok(())
 }
 
-fn build(opts: &BuildOptions) -> Result<(), DynErr> {
+fn build(opts: &BuildOptions) -> anyhow::Result<()> {
     println!("{}", ascii::BUILDING);
     println!("{}", ascii::SEP);
     println!("{}", ascii::SEP);
     println!("{}\n", ascii::SEP);
 
-    built_bootloader(opts)?;
-    build_image(opts)?;
+    built_bootloader(opts).context("failed to build bootloader")?;
+    build_image(opts).context("failed to build image")?;
 
     Ok(())
 }
 
 /// Builds the bootloader.
-fn built_bootloader(opts: &BuildOptions) -> Result<(), DynErr> {
+fn built_bootloader(opts: &BuildOptions) -> anyhow::Result<()> {
     println!("{}", ascii::UEFI);
 
     let mut cmd = Command::new("cargo");
@@ -77,10 +76,10 @@ fn built_bootloader(opts: &BuildOptions) -> Result<(), DynErr> {
     Ok(())
 }
 
-fn build_image(opts: &BuildOptions) -> Result<(), DynErr> {
+fn build_image(opts: &BuildOptions) -> anyhow::Result<()> {
     // Create a FAT filesystem image.
     // FAT file is temporary because it will be copied into the disk image.
-    let fat_image = NamedTempFile::new()?;
+    let fat_image = NamedTempFile::new().context("failed to open temp file for FAT image")?;
     image::create_fat_fs(
         &fat_image,
         vec![(
@@ -88,17 +87,15 @@ fn build_image(opts: &BuildOptions) -> Result<(), DynErr> {
             "efi/boot/bootx64.efi",
         )],
     )
-    .map_err(|e| {
-        eprintln!("Failed to create FAT filesystem image: {}", e);
-        e
-    })?;
+    .context("failed to create FAT image")?;
     // Create a GPT disk image.
-    image::create_gpt_disk(&Path::new(&opts.image_path), fat_image.path())?;
+    image::create_gpt_disk(&Path::new(&opts.image_path), fat_image.path())
+        .context("failed to create GPT disk image")?;
 
     Ok(())
 }
 
-fn run(opts: &RunOptions) -> Result<(), DynErr> {
+fn run(opts: &RunOptions) -> anyhow::Result<()> {
     println!("{}", ascii::RUNNING);
     println!("{}", ascii::SEP);
     println!("{}", ascii::SEP);
